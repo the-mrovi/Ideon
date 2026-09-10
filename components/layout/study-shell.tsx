@@ -14,9 +14,9 @@ export function StudyProgress({ current = 0 }: { current?: number }) {
   );
 }
 
-export function StudyShell({ children, step, showProgress = true }: { children: React.ReactNode; step?: number; showProgress?: boolean }) {
+export function StudyShell({ children, step, showProgress = true, variant = "default" }: { children: React.ReactNode; step?: number; showProgress?: boolean; variant?: "default" | "chat" }) {
   return (
-    <main className="study-page">
+    <main className={`study-page ${variant === "chat" ? "chat-study-page" : ""}`}>
       <div className="study-orb study-orb-one" /><div className="study-orb study-orb-two" />
       <header className="study-site-header"><IdeonBrand /><span>Research session</span></header>
       {showProgress && typeof step === "number" ? <StudyProgress current={step} /> : null}
