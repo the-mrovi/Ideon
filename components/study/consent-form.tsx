@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { writeClientSession } from "@/src/study/client-session";
 
 const agreements = [
   "I have read the study information.",
@@ -15,7 +16,28 @@ const agreements = [
 export function ConsentForm() {
   const router = useRouter();
   const [checked, setChecked] = useState<boolean[]>([false, false, false]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const complete = checked.every(Boolean);
+
+  const continueToStudy = async () => {
+    if (!complete || busy) return;
+    setBusy(true); setError("");
+    try {
+      const start = await fetch("/api/study/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start" }) });
+      const session = await start.json() as { sessionId?: string; sessionToken?: string; sessionCode?: string; participantCode?: string; error?: string };
+      if (!start.ok) {
+        if (session.error === "supabase_not_configured") throw new Error("The research database is not configured on this server. Please contact the study coordinator.");
+        throw new Error("The study session could not be created. Please try again.");
+      }
+      if (!session.sessionId || !session.sessionToken || !session.sessionCode || !session.participantCode) throw new Error("The study server returned an incomplete session. Please contact the study coordinator.");
+      writeClientSession(session as { sessionId: string; sessionToken: string; sessionCode: string; participantCode: string });
+      const consent = await fetch("/api/study/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "consent", sessionId: session.sessionId, sessionToken: session.sessionToken }) });
+      if (!consent.ok) throw new Error("Your consent could not be recorded.");
+      router.push("/study/instructions");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to start the study."); }
+    finally { setBusy(false); }
+  };
 
   return (
     <section className="form-panel consent-panel" aria-labelledby="consent-title">
@@ -38,8 +60,8 @@ export function ConsentForm() {
         ))}
       </fieldset>
       <div className="form-actions">
-        <p>{complete ? "You’re ready to continue." : "Confirm all three statements to continue."}</p>
-        <Button disabled={!complete} onClick={() => router.push("/study/instructions")} className="action-button">Continue <ArrowRight /></Button>
+        <p>{error || (complete ? "You're ready to continue." : "Confirm all three statements to continue.")}</p>
+        <Button disabled={!complete || busy} onClick={continueToStudy} className="action-button">{busy ? "Starting..." : "Continue"} <ArrowRight /></Button>
       </div>
     </section>
   );

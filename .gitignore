@@ -32,11 +32,10 @@ yarn-error.log*
 .env*
 !.env.example
 
-# vercel
+# vercel local state
 .vercel
 
 # typescript
-next-env.d.ts
 /dist/
 /.wrangler/
 /.sites-runtime/

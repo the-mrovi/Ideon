@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { readClientSession } from "@/src/study/client-session";
 
 const sections = [
   { name: "Creativity", questions: ["The conversation helped me develop an original research direction.", "Ideon helped me consider ideas I may not have reached alone."] },
@@ -26,9 +27,26 @@ export function QuestionnaireForm() {
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [attempted, setAttempted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const answered = Object.keys(answers).length;
   const percent = useMemo(() => Math.round(answered / questions.length * 100), [answered]);
-  const submit = (event: React.FormEvent) => { event.preventDefault(); setAttempted(true); if (answered === questions.length) router.push("/study/complete"); };
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setAttempted(true); setError("");
+    if (answered !== questions.length || busy) return;
+    const session = readClientSession();
+    if (!session) { router.replace("/study/consent"); return; }
+    setBusy(true);
+    try {
+      const payload = questions.map((_, index) => ({ questionKey: `q${index + 1}`, construct: sections.find((section) => section.questions.includes(questions[index]))?.name ?? "unknown", numericValue: answers[index] }));
+      const response = await fetch("/api/study/questionnaire", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: session.sessionId, sessionToken: session.sessionToken, answers: payload }) });
+      const data = await response.json() as { sessionCode?: string };
+      if (!response.ok) throw new Error();
+      window.sessionStorage.setItem("ideon.completed.sessionCode", data.sessionCode ?? session.sessionCode);
+      router.push("/study/complete");
+    } catch { setError("Your responses could not be submitted. Please try again."); }
+    finally { setBusy(false); }
+  };
 
   return (
     <section className="questionnaire-panel" aria-labelledby="questionnaire-title">
@@ -37,7 +55,8 @@ export function QuestionnaireForm() {
       <form onSubmit={submit}>
         {sections.map((section) => <section className="survey-section" key={section.name}><h2>{section.name}</h2>{section.questions.map((question) => { const index = questions.indexOf(question); return <LikertScale key={question} question={question} index={index} value={answers[index]} onChange={(value) => setAnswers((items) => ({ ...items, [index]: value }))} />; })}</section>)}
         {attempted && answered !== questions.length ? <p className="validation-message" role="alert">Please answer all {questions.length} statements before submitting.</p> : null}
-        <div className="survey-submit"><span>{answered === questions.length ? "All responses complete." : `${questions.length - answered} responses remaining.`}</span><Button type="submit" className="action-button">Submit Responses <ArrowRight /></Button></div>
+        {error ? <p className="validation-message" role="alert">{error}</p> : null}
+        <div className="survey-submit"><span>{answered === questions.length ? "All responses complete." : `${questions.length - answered} responses remaining.`}</span><Button type="submit" disabled={busy} className="action-button">{busy ? "Submitting..." : "Submit Responses"} <ArrowRight /></Button></div>
       </form>
     </section>
   );

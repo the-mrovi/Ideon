@@ -52,6 +52,7 @@ export interface IdeationContext {
 }
 
 export interface IdeonTurnEvent {
+  turnEventId: string;
   sessionId: string;
   turnNumber: number;
   condition: ExperimentCondition;
@@ -68,6 +69,14 @@ export interface IdeonTurnEvent {
   decisionReason: string;
   configVersion: string;
   promptVersion: string;
+  modelProvider: string;
+  modelVersion: string;
+  statePromptVersion: string;
+  explorePromptVersion: string;
+  deepenPromptVersion: string;
+  stateAnalysisLatencyMs: number;
+  llmResponseLatencyMs: number;
+  totalTurnLatencyMs: number;
   modelName: string;
   modelSettings: Record<string, unknown>;
   aiResponse: string;
@@ -80,6 +89,13 @@ export interface ChatTurnInput {
   condition: ExperimentCondition;
   message: string;
   recentMessages: ChatMessage[];
+  turnEventId?: string;
+  configVersion?: string;
+  modelProvider?: string;
+  modelVersion?: string;
+  statePromptVersion?: string;
+  explorePromptVersion?: string;
+  deepenPromptVersion?: string;
 }
 
 export interface ChatTurnResult {

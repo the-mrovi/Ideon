@@ -25,4 +25,5 @@ export function getSessionState(sessionId: string): IdeonSessionState {
 }
 
 export function commitSessionState(sessionId: string, state: IdeonSessionState) { sessions.set(sessionId, structuredClone(state)); }
+export function hydrateSessionState(sessionId: string, state: IdeonSessionState) { sessions.set(sessionId, structuredClone(state)); }
 export function resetSessionState(sessionId: string) { sessions.delete(sessionId); }

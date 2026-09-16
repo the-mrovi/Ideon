@@ -1,10 +1,5 @@
-const events = [
-  { time: "10:25", state: "Initial", strategy: "Prompted for broad interest", confidence: "—" },
-  { time: "10:27", state: "Exploring", strategy: "Clarifying focus", confidence: "0.76" },
-  { time: "10:29", state: "Developing", strategy: "Specificity prompt", confidence: "0.84" },
-  { time: "10:33", state: "Refining", strategy: "Research question framing", confidence: "0.81" },
-];
+interface StrategyEvent { id: string; created_at: string; detected_state: string | null; selected_strategy: string; state_confidence: number | null; decision_reason: string | null }
 
-export function StrategyTimeline() {
-  return <section className="detail-card strategy-card"><div className="detail-card-heading"><span>Internal study data</span><h2>Strategy timeline</h2></div><div className="strategy-timeline">{events.map((event, index) => <article key={event.time}><i className={index === events.length - 1 ? "last" : ""} /><time>{event.time}</time><div><strong>{event.state}</strong><p>{event.strategy}</p></div><span>{event.confidence}</span></article>)}</div><p className="admin-only-note">Visible to researchers only. Mock values for Part 1.</p></section>;
+export function StrategyTimeline({ events }: { events: StrategyEvent[] }) {
+  return <section className="detail-card strategy-card"><div className="detail-card-heading"><span>Internal study data</span><h2>Strategy timeline</h2></div><div className="strategy-timeline">{events.map((event, index) => <article key={event.id}><i className={index === events.length - 1 ? "last" : ""} /><time>{new Date(event.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><div><strong>{event.detected_state ?? "Deterministic"}</strong><p>{event.selected_strategy}: {event.decision_reason ?? "Recorded strategy decision"}</p></div><span>{event.state_confidence?.toFixed(2) ?? "—"}</span></article>)}</div>{events.length === 0 ? <p>No strategy events recorded yet.</p> : null}<p className="admin-only-note">Visible to approved researchers only.</p></section>;
 }

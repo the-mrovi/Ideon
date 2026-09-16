@@ -1,53 +1,67 @@
 # Ideon
 
-Ideon is an adaptive AI partner for university research ideation. This repository contains the complete Part 1 participant/admin interface and the Part 2 controlled collaboration pipeline.
+Ideon is an adaptive AI partner for university research ideation. Parts 1–3 are integrated: the responsive participant UI, controlled collaboration pipeline, and persistent Supabase research-management system.
 
 ## Local setup
 
-Requirements: Node.js 22.13 or newer.
+Requirements: Node.js 20.9 or newer.
 
 1. Copy `.env.example` to `.env.local`.
-2. Add a server-side `OPENAI_API_KEY`.
+2. Set `GEMINI_API_KEY` (or `OPENAI_API_KEY`), `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY`. Gemini defaults to `gemini-3.6-flash`; set `GEMINI_MODEL` only when you intentionally need a different supported model.
 3. Run `npm.cmd run dev` on Windows, or `npm run dev` on macOS/Linux.
-4. Open `http://localhost:5173/study/chat`.
+4. Open `http://localhost:5173/study/consent`.
 
-Never put the API key in a `NEXT_PUBLIC_` variable or client component.
+Do not use Live Server: this is a server-rendered Next.js application whose API routes, environment variables, AI calls, and Supabase operations require the development server.
 
-## Part 2 architecture
+Never put either server credential in a `NEXT_PUBLIC_` variable or client component. Participant access uses an opaque local resume token; only its SHA-256 hash is stored in Supabase.
 
-Each turn follows this controlled sequence:
+## Research architecture
+
+Each successful turn follows this sequence:
 
 ```text
-POST /api/chat
+participant token validation
+  -> load condition, config, context, and transcript from Supabase
   -> explicit intent detector
   -> state analyzer (adaptive condition only)
   -> strategy manager
-  -> explore/deepen prompt builder
-  -> OpenAI Responses API
-  -> in-memory research event sink
+  -> versioned explore/deepen prompt
+  -> configured Gemini or OpenAI API
+  -> transactional Supabase turn record
 ```
 
-The three conditions share the same model, response settings, safety instructions, interface, and task. Only strategy selection differs:
+Condition and configuration come from the database, never from participant input. Failed generations are logged separately. Final ideas auto-save, questionnaire answers persist, and the authenticated research console reads real RLS-protected data. Analysis-ready CSV endpoints cover sessions, transcripts, strategies, idea events, final ideas, and questionnaire records under `/api/admin/export/`.
 
-- `fixed`: always uses the configured fixed strategy.
-- `random`: uses a deterministic seeded 50/50 decision.
-- `adaptive`: uses explicit intent, detected user state, confidence thresholds, and anti-flapping rules.
+Database migrations are stored in `supabase/migrations/` and have been applied to Supabase project `Ai-chat` (`wxmxnahytjrlailgjxvq`).
 
-Pilot settings are centralized in `src/ai/experimentConfig.ts`. The experiment uses the frozen `gpt-5.4-mini-2026-03-17` snapshot through the Responses API. Prompt templates and versions are in `src/ai/prompts/`. The provider abstraction is in `src/ai/llmClient.ts`.
+## Deploy to Vercel
 
-The production chat response contains only the normal Ideon answer. Internal state, confidence, strategy, and decision metadata are recorded server-side and are never returned to participants. A debug inspector can be enabled locally with `NEXT_PUBLIC_IDEON_DEBUG_INSPECTOR=true`; the server blocks it in production.
+1. Import `https://github.com/the-mrovi/Ideon` in Vercel. Vercel will detect Next.js automatically.
+2. Add `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `IDEON_STUDY_PHASE` under Project Settings → Environment Variables.
+3. Keep `NEXT_PUBLIC_IDEON_DEBUG_INSPECTOR=false` for production.
+4. Deploy. No custom build command, output directory, or root-directory override is required.
+
+Never add `.env.local` or any service-role/API key to GitHub.
+
+## Create the first researcher
+
+1. In the Supabase dashboard, create a user under Authentication → Users.
+2. Copy that user's UUID.
+3. Run this in the Supabase SQL editor, replacing the UUID and name:
+
+```sql
+insert into public.admin_profiles (auth_user_id, role, display_name)
+values ('USER_UUID', 'admin', 'Research administrator');
+```
+
+The user can then sign in at `/admin`. Researchers have read access; admins can additionally freeze/activate configurations and delete development or pilot sessions. Main-study deletion is blocked in the database.
 
 ## Verification
 
 ```powershell
 npm.cmd test
+npm.cmd run lint
 npm.cmd run build
 ```
 
-The tests cover rule classification, explicit overrides, fixed/random/adaptive separation, seeded reproducibility, confidence switching, anti-flapping, malformed classifier output, and generation failure rollback.
-
-## Part 3 integration
-
-`ResearchEventSink` is the persistence boundary. Replace the in-memory implementation with a Supabase-backed sink in Part 3 without changing the analyzer, strategy manager, prompts, API contract, or participant UI.
-
-No Supabase persistence is implemented in Part 2.
+The migration SQL is version-controlled. Before moving from development to main data collection, create a main-phase configuration, review its model/prompt/task/questionnaire versions, freeze it, then activate it from the admin console.

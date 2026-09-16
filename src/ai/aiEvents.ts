@@ -15,5 +15,5 @@ export class InMemoryResearchEventSink implements ResearchEventSink {
   clear() { this.events.length = 0; }
 }
 
-// Part 3 integration point: replace this instance with a SupabaseResearchEventSink.
+// Safe default for isolated unit tests; production routes inject the Supabase sink.
 export const researchEventSink = new InMemoryResearchEventSink();

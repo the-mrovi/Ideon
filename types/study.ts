@@ -26,8 +26,11 @@ export interface FinalIdea {
 }
 
 export interface AdminSession extends StudySession {
+  sessionCode?: string;
   condition: ExperimentCondition;
   startedAt: string;
   duration: string;
   hasFinalIdea: boolean;
+  turns?: number;
+  studyPhase?: "development" | "pilot" | "main";
 }
