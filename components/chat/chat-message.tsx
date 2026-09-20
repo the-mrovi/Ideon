@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, Copy, RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IdeonMark } from "@/components/brand/ideon-brand";
+import { AssistantMarkdown } from "@/components/chat/assistant-markdown";
 import type { ChatMessage as ChatMessageType } from "@/types/study";
 
 export function ThinkingIndicator() {
@@ -23,7 +24,7 @@ export function ChatMessage({ message, onRetry }: { message: ChatMessageType; on
   return (
     <article className={`chat-message ai-message ${message.status === "streaming" ? "is-streaming" : ""}`}>
       <span className="message-avatar"><IdeonMark className="message-avatar-mark" /></span>
-      <div className="message-body"><div className="message-byline"><strong>Ideon</strong><time>{message.createdAt}</time></div><p>{message.content}</p>
+      <div className="message-body"><div className="message-byline"><strong>Ideon</strong><time>{message.createdAt}</time></div><AssistantMarkdown content={message.content} />
         <Button variant="ghost" size="icon-xs" className="copy-response" onClick={copy} aria-label={copied ? "Response copied" : "Copy response"}>{copied ? <Check /> : <Copy />}</Button>
       </div>
     </article>
