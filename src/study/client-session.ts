@@ -1,6 +1,8 @@
+import type { StudyMode } from "../../types/study.ts";
+
 export const SESSION_STORAGE_KEY = "ideon.study.session.v1";
 
-export interface ClientStudySession { sessionId: string; sessionToken: string; sessionCode: string; participantCode: string }
+export interface ClientStudySession { sessionId: string; sessionToken: string; sessionCode: string; participantCode: string; mode?: StudyMode }
 
 export function readClientSession(): ClientStudySession | null {
   if (typeof window === "undefined") return null;
@@ -11,4 +13,8 @@ export function readClientSession(): ClientStudySession | null {
 }
 
 export function writeClientSession(value: ClientStudySession) { window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value)); }
+export function writeClientStudyMode(mode: StudyMode) {
+  const session = readClientSession();
+  if (session) writeClientSession({ ...session, mode });
+}
 export function clearClientSession() { if (typeof window !== "undefined") window.localStorage.removeItem(SESSION_STORAGE_KEY); }

@@ -1,4 +1,5 @@
 export type ExperimentCondition = "fixed" | "random" | "adaptive";
+export type StudyMode = Extract<ExperimentCondition, "random" | "adaptive">;
 export type ChatRole = "user" | "assistant";
 export type MessageStatus = "normal" | "sending" | "thinking" | "streaming" | "failed";
 
@@ -14,6 +15,7 @@ export interface StudySession {
   id: string;
   participantCode: string;
   condition?: ExperimentCondition;
+  modeLocked?: boolean;
   startedAt?: string;
   status: "not_started" | "active" | "completed";
 }

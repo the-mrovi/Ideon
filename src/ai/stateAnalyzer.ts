@@ -5,7 +5,7 @@ import type { ActiveStrategy, StateAnalysisInput, StateAnalysisResult, UserState
 interface Rule { state: UserState; confidence: number; patterns: RegExp[]; reason: string }
 
 const RULES: Rule[] = [
-  { state: "rejecting", confidence: 0.94, reason: "User rejected or questioned the current direction.", patterns: [/\bi don'?t like\b/i, /\bnot this (one|direction|topic)\b/i, /\b(isn'?t|is not) what i want\b/i, /\btoo (common|broad|narrow|obvious)\b/i, /\bwrong direction\b/i] },
+  { state: "rejecting", confidence: 0.94, reason: "User rejected or questioned the current direction.", patterns: [/\bi don'?t like\b/i, /\bi don'?t want (this|that)\b/i, /\bnot this (one|direction|topic)\b/i, /\b(isn'?t|is not) what i want\b/i, /\btoo (common|broad|narrow|obvious)\b/i, /\bwrong direction\b/i] },
   { state: "committed", confidence: 0.92, reason: "User clearly selected a direction to continue.", patterns: [/\b(this is the one|this will be my topic|let'?s use .+|go with .+|i (want|will) (to )?(continue|focus|use|choose))\b/i, /\bi want (number|option|idea)\s*\d+\b/i] },
   { state: "uncertain", confidence: 0.9, reason: "User expressed uncertainty about which direction to choose.", patterns: [/\b(i don'?t (really )?know|i do not (really )?know|not sure|no idea|can'?t decide|cannot decide|which (one|direction|topic).*(choose|pick))\b/i, /\bmaybe something else\b/i] },
   { state: "exploring", confidence: 0.88, reason: "User is comparing or requesting multiple possibilities.", patterns: [/\b(what other|what else|other ideas?|alternatives?|different ideas?|different directions?|a few ideas?|compare (these|options))\b/i] },

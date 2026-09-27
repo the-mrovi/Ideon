@@ -12,7 +12,9 @@ export function buildPrompt(strategy: ActiveStrategy, message: string, recentMes
   const contextSummary = [
     `Original topic: ${context.originalTopic ?? "Not set"}.`,
     context.currentDirection ? `Current participant-selected direction: ${context.currentDirection}.` : "No direction has been firmly selected.",
+    context.selectedIdeas.length ? `Previously selected directions: ${context.selectedIdeas.slice(-4).join(" | ")}.` : "No previously selected directions are recorded.",
     context.rejectedIdeas.length ? `Do not repeat these rejected directions: ${context.rejectedIdeas.slice(-4).join(" | ")}.` : "No rejected directions are recorded.",
+    context.userConstraints?.length ? `Participant constraints to respect: ${context.userConstraints.slice(-4).join(" | ")}.` : "No additional participant constraints are recorded.",
   ].join("\n");
   const history = recentMessages.slice(-8).filter((item) => item.status !== "failed" && item.status !== "thinking").map((item) => ({ role: item.role, content: item.content }));
   return { instructions: `${COMMON_IDEON_INSTRUCTIONS}\n\n${strategyPrompt}\n\nSession context:\n${contextSummary}`, input: [...history, { role: "user", content: message }], promptVersion: `${COMMON_PROMPT_VERSION}+${strategyVersion}` };

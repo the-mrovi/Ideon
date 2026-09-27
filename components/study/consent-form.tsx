@@ -63,7 +63,7 @@ export function ConsentForm() {
       if (!session.sessionId || !session.sessionToken || !session.sessionCode || !session.participantCode) throw new Error("The study server returned an incomplete session. Please contact the study coordinator.");
       setProgress("Recording consent...");
       await requestSession({ action: "consent", sessionId: session.sessionId, sessionToken: session.sessionToken }, controller.signal);
-      writeClientSession({ sessionId: session.sessionId, sessionToken: session.sessionToken, sessionCode: session.sessionCode, participantCode: session.participantCode });
+      writeClientSession({ sessionId: session.sessionId, sessionToken: session.sessionToken, sessionCode: session.sessionCode, participantCode: session.participantCode, mode: "random" });
       window.location.assign("/study/instructions");
     } catch (cause) {
       setError(cause instanceof DOMException && cause.name === "AbortError"

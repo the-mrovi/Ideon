@@ -29,6 +29,7 @@ for (const [message, state, preference] of cases) {
 
 test("explicit explore and deepen commands override prediction", () => {
   assert.equal(detectExplicitIntent("Give me other ideas.").strategy, "explore");
+  assert.equal(detectExplicitIntent("Give me another direction.").strategy, "explore");
   assert.equal(detectExplicitIntent("Go deeper into number 2.").strategy, "deepen");
   assert.equal(detectExplicitIntent("Let's continue with this topic.").strategy, "deepen");
 });
@@ -46,6 +47,14 @@ test("seeded random mode is reproducible and ignores user state", () => {
   const deepenSignal = chooseStrategy({ ...common, stateAnalysis: { state: "committed", confidence: 1, preferredStrategy: "deepen", evidence: [], shortReason: "Committed." } });
   assert.equal(exploreSignal.selectedStrategy, deepenSignal.selectedStrategy);
   assert.equal(exploreSignal.randomValue, deepenSignal.randomValue);
+  assert.equal(exploreSignal.randomExploreProbability, 0.5);
+});
+
+test("random mode can select both shared strategies without state classification", () => {
+  const decisions = Array.from({ length: 40 }, (_, index) => chooseStrategy({ condition: "random", currentStrategy: null, turnNumber: 1, turnsSinceLastSwitch: 1, sessionSeed: `random-session-${index}` }));
+  assert.equal(decisions.some((decision) => decision.selectedStrategy === "explore"), true);
+  assert.equal(decisions.some((decision) => decision.selectedStrategy === "deepen"), true);
+  assert.equal(decisions.every((decision) => decision.source === "random" && decision.randomValue !== undefined), true);
 });
 
 test("adaptive mode switches on a strong state signal", () => {
@@ -85,6 +94,19 @@ test("malformed classifier output retries once then becomes neutral fallback", a
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("state classification receives only the configured recent context window", async () => {
+  let received = 0;
+  const client: LLMClient = {
+    modelName: "test-model",
+    modelSettings: {},
+    async classifyState(input): Promise<StateAnalysisResult> { received = input.recentMessages.length; return { state: "neutral", confidence: 0.2, preferredStrategy: "keep_current", evidence: [], shortReason: "No clear signal." }; },
+    async generateResponse(): Promise<string> { return "unused"; },
+  };
+  const recentMessages = Array.from({ length: 10 }, (_, index) => ({ id: String(index), role: index % 2 ? "assistant" as const : "user" as const, content: `Message ${index}`, createdAt: "Now" }));
+  await analyzeUserState({ ...baseInput, latestUserMessage: "I have thoughts about assessment design.", recentMessages }, client);
+  assert.equal(received, 6);
+});
+
 test("generation failure does not commit a strategy change", async () => {
   const sessionId = "failure-session";
   resetSessionState(sessionId);
@@ -104,8 +126,8 @@ test("explore and deepen build distinct, versioned behavioral prompts", () => {
   context.rejectedIdeas.push("AI plagiarism detection");
   const explore = buildPrompt("explore", "What else could I study?", [], context);
   const deepen = buildPrompt("deepen", "Help me refine this.", [], context);
-  assert.match(explore.instructions, /Generate 3–5 meaningfully different research directions/);
-  assert.match(deepen.instructions, /narrow the topic into a clearer problem/);
+  assert.match(explore.instructions, /3–5 meaningfully different research directions/);
+  assert.match(deepen.instructions, /Narrow gradually from broad topic/);
   assert.match(explore.instructions, /Do not repeat these rejected directions: AI plagiarism detection/);
   assert.notEqual(explore.promptVersion, deepen.promptVersion);
 });
@@ -127,4 +149,49 @@ test("successful turns emit structured metadata and update idea context", async 
   assert.equal(result.event.ideationContext.selectedIdeas.length, 1);
   assert.equal(events.length, 1);
   assert.equal(getSessionState(sessionId).turnNumber, 1);
+});
+
+test("exact adaptive scenario logs Explore, Deepen, Deepen, Explore", async () => {
+  const sessionId = "adaptive-scenario";
+  resetSessionState(sessionId);
+  const events: Array<{ selectedStrategy: string; decisionSource: string }> = [];
+  const recentMessages: Array<{ id: string; role: "user" | "assistant"; content: string; createdAt: string }> = [];
+  const client: LLMClient = {
+    modelName: "same-test-model",
+    modelSettings: { maxOutputTokens: 420 },
+    async classifyState(): Promise<StateAnalysisResult> { throw new Error("The deterministic rules should classify this scenario."); },
+    async generateResponse(): Promise<string> { return "A concise Ideon response."; },
+  };
+  const messages = [
+    "I want to research AI in education but I don't know what topic.",
+    "The student trust idea seems interesting.",
+    "Tell me more about trust calibration.",
+    "Actually this seems too common. Give me another direction.",
+  ];
+  for (const [index, message] of messages.entries()) {
+    const result = await processIdeationTurn({ sessionId, condition: "adaptive", message, recentMessages }, { client, eventSink: { async recordTurn(event) { events.push(event); } } });
+    recentMessages.push({ id: `u-${index}`, role: "user", content: message, createdAt: "Now" }, { id: `a-${index}`, role: "assistant", content: result.response, createdAt: "Now" });
+  }
+  assert.deepEqual(events.map((event) => event.selectedStrategy), ["explore", "deepen", "deepen", "explore"]);
+  assert.deepEqual(events.map((event) => event.decisionSource), ["adaptive", "adaptive", "user_override", "user_override"]);
+});
+
+test("random turns emit draw metadata and use the same shared prompt builder", async () => {
+  const sessionId = "random-pipeline";
+  resetSessionState(sessionId);
+  let classifierCalls = 0;
+  let instructions = "";
+  const client: LLMClient = {
+    modelName: "same-test-model",
+    modelSettings: { maxOutputTokens: 420 },
+    async classifyState(): Promise<StateAnalysisResult> { classifierCalls += 1; return { state: "committed", confidence: 1, preferredStrategy: "deepen", evidence: [], shortReason: "Should not run." }; },
+    async generateResponse(input): Promise<string> { instructions = input.instructions; return "A useful response."; },
+  };
+  const result = await processIdeationTurn({ sessionId, condition: "random", message: "I don't like this direction.", recentMessages: [] }, { client, eventSink: { async recordTurn() {} } });
+  assert.equal(classifierCalls, 0);
+  assert.equal(result.event.decisionSource, "random");
+  assert.equal(typeof result.event.randomValue, "number");
+  assert.equal(result.event.randomExploreProbability, 0.5);
+  const expected = buildPrompt(result.event.selectedStrategy, "I don't like this direction.", [], result.event.ideationContext);
+  assert.equal(instructions, expected.instructions);
 });

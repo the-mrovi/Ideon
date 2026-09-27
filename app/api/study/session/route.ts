@@ -10,7 +10,7 @@ const credentials = z.object({ sessionId: z.string().uuid(), sessionToken: z.str
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("start") }),
   z.object({ action: z.literal("consent"), ...credentials.shape }),
-  z.object({ action: z.literal("begin"), ...credentials.shape }),
+  z.object({ action: z.literal("begin"), mode: z.enum(["random", "adaptive"]), ...credentials.shape }),
   z.object({ action: z.literal("resume"), ...credentials.shape }),
 ]);
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     if (parsed.data.action === "start") return NextResponse.json(await createStudySession(), { status: 201 });
     const auth = { sessionId: parsed.data.sessionId, sessionToken: parsed.data.sessionToken };
     if (parsed.data.action === "consent") { await recordConsent(auth); return NextResponse.json({ ok: true }); }
-    if (parsed.data.action === "begin") { await beginStudy(auth); return NextResponse.json({ ok: true }); }
+    if (parsed.data.action === "begin") return NextResponse.json({ ok: true, ...(await beginStudy(auth, parsed.data.mode)) });
     return NextResponse.json(await loadStudy(auth));
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -30,12 +30,17 @@ export async function POST(request: Request) {
       ? "supabase_not_configured"
       : message.includes("invalid_session_token")
         ? "invalid_session"
-        : /Supabase request failed \((401|403)\)/.test(message)
-          ? "supabase_credentials_rejected"
-          : /Supabase request failed \(404\)|PGRST202|Could not find the function|relation .* does not exist/i.test(message)
-            ? "database_schema_missing"
-            : "database_unavailable";
+        : message.includes("mode_locked")
+          ? "mode_locked"
+          : message.includes("session_not_ready")
+            ? "session_not_ready"
+            : /Supabase request failed \((401|403)\)/.test(message)
+              ? "supabase_credentials_rejected"
+              : /Supabase request failed \(404\)|PGRST202|Could not find the function|relation .* does not exist/i.test(message)
+                ? "database_schema_missing"
+                : "database_unavailable";
     console.error("Study session request failed", error);
-    return NextResponse.json({ error: code }, { status: code === "invalid_session" ? 401 : 503 });
+    const status = code === "invalid_session" ? 401 : code === "mode_locked" || code === "session_not_ready" ? 409 : 503;
+    return NextResponse.json({ error: code }, { status });
   }
 }

@@ -40,6 +40,7 @@ export interface StrategyDecision {
   state?: UserState;
   shortReason: string;
   randomValue?: number;
+  randomExploreProbability?: number;
 }
 
 export interface IdeationContext {
@@ -48,6 +49,7 @@ export interface IdeationContext {
   selectedIdeas: string[];
   rejectedIdeas: string[];
   userGoals?: string[];
+  userConstraints?: string[];
   currentStrategy?: ActiveStrategy;
 }
 
@@ -62,6 +64,8 @@ export interface IdeonTurnEvent {
   detectedState?: UserState | null;
   stateConfidence?: number | null;
   stateEvidence?: string[];
+  randomValue?: number | null;
+  randomExploreProbability?: number | null;
   previousStrategy?: ActiveStrategy | null;
   selectedStrategy: ActiveStrategy;
   strategyChanged: boolean;

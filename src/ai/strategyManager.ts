@@ -30,7 +30,7 @@ export function chooseStrategy(input: StrategyDecisionInput): StrategyDecision {
   if (input.condition === "random") {
     const randomValue = seededRandom(input.sessionSeed ?? "ideon-default-seed", input.turnNumber);
     const selectedStrategy = randomValue < ideonConfig.randomExploreProbability ? "explore" : "deepen";
-    return { selectedStrategy, previousStrategy: previous, changed: previous !== null && previous !== selectedStrategy, source: "random", shortReason: `Seeded random baseline draw compared with configured probability ${ideonConfig.randomExploreProbability}.`, randomValue };
+    return { selectedStrategy, previousStrategy: previous, changed: previous !== null && previous !== selectedStrategy, source: "random", shortReason: `Seeded random baseline draw compared with configured probability ${ideonConfig.randomExploreProbability}.`, randomValue, randomExploreProbability: ideonConfig.randomExploreProbability };
   }
 
   const analysis = input.stateAnalysis;

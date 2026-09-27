@@ -1,7 +1,7 @@
 import type { ActiveStrategy } from "./decisionTypes.ts";
 
 const EXPLORE_COMMANDS = [
-  /\b(give|show|suggest|offer)\s+(me\s+)?(some\s+|a few\s+|more\s+)?(other|different|alternative)\s+(ideas?|directions?|topics?|options?)\b/i,
+  /\b(give|show|suggest|offer)\s+(me\s+)?(some\s+|a few\s+|more\s+)?(another|other|different|alternative)\s+(ideas?|directions?|topics?|options?)\b/i,
   /\b(what else|other ideas?|different directions?|change (the )?topic|try something different|look at alternatives?)\b/i,
   /\b(let'?s|can we|i want to)\s+(switch|change|explore|consider)\b.*\b(direction|topic|ideas?|options?)\b/i,
 ];

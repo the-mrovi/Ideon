@@ -6,18 +6,20 @@ import { ArrowUp, BookOpen, ChevronDown, Flag, Sparkles } from "lucide-react";
 import { IdeonMark } from "@/components/brand/ideon-brand";
 import { ChatMessage } from "@/components/chat/chat-message";
 import { DebugInspector, type DebugTurn } from "@/components/chat/debug-inspector";
+import { StudyModeSelector } from "@/components/study/mode-selector";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import type { ChatMessage as Message } from "@/types/study";
-import { readClientSession, type ClientStudySession } from "@/src/study/client-session";
+import type { ChatMessage as Message, StudyMode } from "@/types/study";
+import { readClientSession, writeClientStudyMode, type ClientStudySession } from "@/src/study/client-session";
 
 declare global {
   interface Document { modelContext?: { registerTool(tool: { name: string; title?: string; description: string; inputSchema: object; annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean }; execute(input: unknown): unknown | Promise<unknown> }, options?: { signal?: AbortSignal }): void | Promise<void> } }
 }
 
 interface ChatApiResult { response?: string; debug?: DebugTurn; error?: { code: string; message: string; retryable: boolean } }
+interface ResumeApiResult { session?: { condition?: string; status?: string }; messages?: Message[] }
 
 const initialMessages: Message[] = [{ id: "welcome", role: "assistant", content: "Welcome to your research ideation session. Let’s explore the part of generative AI in university education that feels most important to you. What have you noticed, questioned, or wanted to understand more deeply?", createdAt: "Now" }];
 
@@ -33,6 +35,8 @@ export function ChatWorkspace() {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [mode, setMode] = useState<StudyMode>("random");
+  const [showMode, setShowMode] = useState(false);
   const [debug, setDebug] = useState<DebugTurn | null>(null);
   const busyRef = useRef(false);
   const sessionRef = useRef<ClientStudySession | null>(null);
@@ -60,8 +64,18 @@ export function ChatWorkspace() {
     if (!session) { router.replace("/study/consent"); return; }
     sessionRef.current = session;
     fetch("/api/study/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resume", sessionId: session.sessionId, sessionToken: session.sessionToken }) })
-      .then(async (response) => { if (!response.ok) throw new Error("resume_failed"); return response.json() as Promise<{ messages?: Message[] }>; })
-      .then((data) => { if (data.messages?.length) setMessages(data.messages); setReady(true); })
+      .then(async (response) => { if (!response.ok) throw new Error("resume_failed"); return response.json() as Promise<ResumeApiResult>; })
+      .then((data) => {
+        if (data.session?.status !== "in_progress") { router.replace("/study/instructions"); return; }
+        if (data.session.condition === "random" || data.session.condition === "adaptive") {
+          const restoredMode = data.session.condition;
+          setMode(restoredMode);
+          setShowMode(true);
+          writeClientStudyMode(restoredMode);
+        }
+        if (data.messages?.length) setMessages(data.messages);
+        setReady(true);
+      })
       .catch(() => router.replace("/study/consent"));
   }, [router]);
 
@@ -134,7 +148,7 @@ export function ChatWorkspace() {
         <CollapsibleContent className="task-content"><div className="task-grid"><div><small>Core objective</small><p>Develop a specific research problem through a focused conversation.</p></div><div><small>Expected outcome</small><p>A clear research question ready for final review and submission.</p></div></div></CollapsibleContent>
       </Collapsible>
       <div className="message-list" aria-live="polite"><div className="conversation-stream"><div className="conversation-intro"><span><Sparkles /> Guided ideation</span><p>There is no required way to begin. Follow the question that genuinely interests you.</p></div>{messages.map((message) => <ChatMessage key={message.id} message={message} onRetry={retry} />)}{messages.length === 1 && !busy && ready ? <div className="starter-prompts" aria-label="Suggested starting points">{starterPrompts.map((prompt) => <button key={prompt} type="button" onClick={() => { setValue(prompt); textareaRef.current?.focus(); }}>{prompt}<ArrowUp /></button>)}</div> : null}{debug ? <DebugInspector value={debug} /> : null}<div ref={endRef} /></div></div>
-      <div className="chat-bottom"><form className="chat-composer" onSubmit={submit}><div className="composer-field"><label htmlFor="ideon-message"><Sparkles /> Research response</label><Textarea id="ideon-message" ref={textareaRef} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={ready ? "Share what you’re thinking…" : "Restoring your session…"} aria-label="Message Ideon" rows={1} disabled={busy || !ready} /><div className="composer-meta"><span>Enter to send · Shift + Enter for a new line</span><span className={`composer-status ${ready ? "is-ready" : ""}`}><i /> {ready ? "Ideon is ready" : "Restoring session"}</span></div></div><Button type="submit" className="composer-send" disabled={!value.trim() || busy || !ready} aria-label="Send message"><span>Send</span><ArrowUp /></Button></form></div>
+      <div className="chat-bottom"><form className="chat-composer" onSubmit={submit}><div className="composer-field"><label htmlFor="ideon-message"><Sparkles /> Research response</label><Textarea id="ideon-message" ref={textareaRef} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={ready ? "Share what you’re thinking…" : "Restoring your session…"} aria-label="Message Ideon" rows={1} disabled={busy || !ready} /><div className="composer-meta"><span>Enter to send · Shift + Enter for a new line</span><span className={`composer-status ${ready ? "is-ready" : ""}`}><i /> {ready ? "Ideon is ready" : "Restoring session"}</span></div></div><div className="composer-actions">{showMode ? <StudyModeSelector value={mode} locked compact /> : null}<Button type="submit" className="composer-send" disabled={!value.trim() || busy || !ready} aria-label="Send message"><span>Send</span><ArrowUp /></Button></div></form></div>
     </section>
   );
 }

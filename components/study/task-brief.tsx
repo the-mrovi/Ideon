@@ -1,22 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Clock3, Goal, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { readClientSession } from "@/src/study/client-session";
+import { StudyModeSelector } from "@/components/study/mode-selector";
+import { readClientSession, writeClientStudyMode } from "@/src/study/client-session";
+import type { StudyMode } from "@/types/study";
 
 export function TaskBrief() {
   const router = useRouter();
+  const [mode, setMode] = useState<StudyMode>("random");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    const savedMode = readClientSession()?.mode;
+    const restore = window.setTimeout(() => {
+      if (savedMode === "random" || savedMode === "adaptive") setMode(savedMode);
+    }, 0);
+    return () => window.clearTimeout(restore);
+  }, []);
   const begin = async () => {
     const session = readClientSession();
     if (!session) { router.replace("/study/consent"); return; }
     setBusy(true); setError("");
     try {
-      const response = await fetch("/api/study/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "begin", sessionId: session.sessionId, sessionToken: session.sessionToken }) });
+      const response = await fetch("/api/study/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "begin", sessionId: session.sessionId, sessionToken: session.sessionToken, mode }) });
       if (!response.ok) throw new Error("The research session could not be started.");
+      writeClientStudyMode(mode);
       router.push("/study/chat");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to start."); }
     finally { setBusy(false); }
@@ -35,7 +46,8 @@ export function TaskBrief() {
         <article><Clock3 /><div><h2>Session</h2><p>Approximately 20 minutes, followed by a short questionnaire.</p></div></article>
       </div>
       <div className="brief-note"><span>At the end</span><p>You’ll review and submit one final research direction in your own words.</p></div>
-      <div className="form-actions right-only">{error ? <p role="alert">{error}</p> : null}<Button onClick={begin} disabled={busy} className="action-button">{busy ? "Starting..." : "Begin Ideation"} <ArrowRight /></Button></div>
+      <StudyModeSelector value={mode} onValueChange={(next) => { setMode(next); writeClientStudyMode(next); }} />
+      <div className="form-actions right-only">{error ? <p role="alert">{error}</p> : null}<Button type="button" onClick={begin} disabled={busy} className="action-button">{busy ? "Starting..." : "Begin Ideation"} <ArrowRight /></Button></div>
     </section>
   );
 }

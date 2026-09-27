@@ -51,6 +51,8 @@ export async function processIdeationTurn(input: ChatTurnInput, dependencies: Pi
     detectedState: stateAnalysis?.state ?? null,
     stateConfidence: stateAnalysis?.confidence ?? null,
     stateEvidence: stateAnalysis?.evidence ?? [],
+    randomValue: decision.randomValue ?? null,
+    randomExploreProbability: decision.randomExploreProbability ?? null,
     previousStrategy: previousState.currentStrategy,
     selectedStrategy: decision.selectedStrategy,
     strategyChanged: decision.changed,

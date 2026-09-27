@@ -7,7 +7,7 @@ Ideon is an adaptive AI partner for university research ideation. Parts 1–3 ar
 Requirements: Node.js 20.9 or newer.
 
 1. Copy `.env.example` to `.env.local`.
-2. Set `GEMINI_API_KEY` (or `OPENAI_API_KEY`), `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY`. Gemini defaults to `gemini-3.6-flash`; set `GEMINI_MODEL` only when you intentionally need a different supported model.
+2. Set `GEMINI_API_KEY` (or `OPENAI_API_KEY`), `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY`. Gemini defaults to `gemini-3.6-flash`; set `GEMINI_MODEL` only when you intentionally need a different supported model.
 3. Run `npm.cmd run dev` on Windows, or `npm run dev` on macOS/Linux.
 4. Open `http://localhost:5173/study/consent`.
 
@@ -21,7 +21,7 @@ Each successful turn follows this sequence:
 
 ```text
 participant token validation
-  -> load condition, config, context, and transcript from Supabase
+  -> load the locked mode, config, context, and transcript from Supabase
   -> explicit intent detector
   -> state analyzer (adaptive condition only)
   -> strategy manager
@@ -30,9 +30,9 @@ participant token validation
   -> transactional Supabase turn record
 ```
 
-Condition and configuration come from the database, never from participant input. Failed generations are logged separately. Final ideas auto-save, questionnaire answers persist, and the authenticated research console reads real RLS-protected data. Analysis-ready CSV endpoints cover sessions, transcripts, strategies, idea events, final ideas, and questionnaire records under `/api/admin/export/`.
+The participant selects Random or Adaptive before beginning; the server validates the value and the database locks it atomically when the study starts. Every later turn and refresh restores that immutable database assignment. Failed generations are logged separately. Final ideas auto-save, questionnaire answers persist, and the authenticated research console reads real RLS-protected data. Analysis-ready CSV endpoints cover sessions, transcripts, strategies, idea events, final ideas, and questionnaire records under `/api/admin/export/`.
 
-Database migrations are stored in `supabase/migrations/` and have been applied to Supabase project `Ai-chat` (`wxmxnahytjrlailgjxvq`).
+Database migrations are stored in `supabase/migrations/`. Apply every pending migration to Supabase project `Ai-chat` (`wxmxnahytjrlailgjxvq`) before deploying matching application code.
 
 ## Deploy to Vercel
 

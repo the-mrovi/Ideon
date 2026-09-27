@@ -1,6 +1,6 @@
 import type { UserState, PreferredStrategy } from "./decisionTypes.ts";
 
-export const EXPERIMENT_CONFIG_VERSION = "ideon-v1";
+export const EXPERIMENT_CONFIG_VERSION = "ideon-v2";
 
 export const ideonConfig = Object.freeze({
   condition: "adaptive" as const,

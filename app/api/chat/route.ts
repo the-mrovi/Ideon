@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         explorePromptVersion: context.session.explore_prompt_version, deepenPromptVersion: context.session.deepen_prompt_version,
       }, { eventSink: new SupabaseResearchEventSink() });
       const debugEnabled = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_IDEON_DEBUG_INSPECTOR === "true";
-      return NextResponse.json({ response: result.response, ...(debugEnabled ? { debug: { state: result.event.detectedState, confidence: result.event.stateConfidence, strategy: result.event.selectedStrategy, previous: result.event.previousStrategy, switched: result.event.strategyChanged, source: result.event.decisionSource, reason: result.event.decisionReason, turn: result.event.turnNumber } } : {}) });
+      return NextResponse.json({ response: result.response, ...(debugEnabled ? { debug: { mode: result.event.condition, state: result.event.detectedState, confidence: result.event.stateConfidence, strategy: result.event.selectedStrategy, previous: result.event.previousStrategy, switched: result.event.strategyChanged, source: result.event.decisionSource, reason: result.event.decisionReason, randomValue: result.event.randomValue, randomExploreProbability: result.event.randomExploreProbability, turn: result.event.turnNumber } } : {}) });
     } catch (error) {
       const category = error instanceof LLMConfigurationError ? "provider_not_configured" : error instanceof LLMGenerationError ? "generation_failed" : "pipeline_failed";
       await recordFailedTurn(credentials, parsed.data.turnEventId, context.state.turnNumber + 1, parsed.data.message, category, Math.round(performance.now() - startedAt)).catch((recordError) => console.error("Failed to persist turn failure", recordError));
