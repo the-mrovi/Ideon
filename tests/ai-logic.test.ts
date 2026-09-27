@@ -9,6 +9,7 @@ import { getSessionState, resetSessionState } from "../src/ai/sessionStore.ts";
 import { buildPrompt } from "../src/ai/promptBuilder.ts";
 import { createIdeationContext } from "../src/ai/contextManager.ts";
 import type { StateAnalysisInput, StateAnalysisResult } from "../src/ai/decisionTypes.ts";
+import { buildSupabaseHeaders, isLegacySupabaseJwt } from "../src/db/supabaseHeaders.ts";
 
 const baseInput: StateAnalysisInput = { latestUserMessage: "", recentMessages: [], currentStrategy: "deepen", currentIdea: "trust calibration" };
 const cases = [
@@ -18,6 +19,18 @@ const cases = [
   ["I like the trust idea.", "interested", "deepen"],
   ["Okay.", "neutral", "keep_current"],
 ] as const;
+
+test("Supabase secret keys are sent only as API keys", () => {
+  assert.deepEqual(buildSupabaseHeaders("sb_secret_example"), { apikey: "sb_secret_example" });
+  assert.deepEqual(buildSupabaseHeaders("sb_publishable_example"), { apikey: "sb_publishable_example" });
+});
+
+test("legacy service-role JWTs and user sessions retain Bearer authorization", () => {
+  const legacy = "eyJheader.payload.signature";
+  assert.equal(isLegacySupabaseJwt(legacy), true);
+  assert.deepEqual(buildSupabaseHeaders(legacy), { apikey: legacy, Authorization: `Bearer ${legacy}` });
+  assert.deepEqual(buildSupabaseHeaders("sb_publishable_example", "user.jwt.token"), { apikey: "sb_publishable_example", Authorization: "Bearer user.jwt.token" });
+});
 
 for (const [message, state, preference] of cases) {
   test(`rules classify: ${message}`, () => {

@@ -7,7 +7,7 @@ Ideon is an adaptive AI partner for university research ideation. Parts 1–3 ar
 Requirements: Node.js 20.9 or newer.
 
 1. Copy `.env.example` to `.env.local`.
-2. Set `GEMINI_API_KEY` (or `OPENAI_API_KEY`), `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY`. Gemini defaults to `gemini-3.6-flash`; set `GEMINI_MODEL` only when you intentionally need a different supported model.
+2. Set `GEMINI_API_KEY` (or `OPENAI_API_KEY`), `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and a server-only Supabase credential: preferably `SUPABASE_SECRET_KEY` (`sb_secret_...`) or the legacy `SUPABASE_SERVICE_ROLE_KEY` JWT. Gemini defaults to `gemini-3.6-flash`; set `GEMINI_MODEL` only when you intentionally need a different supported model.
 3. Run `npm.cmd run dev` on Windows, or `npm run dev` on macOS/Linux.
 4. Open `http://localhost:5173/study/consent`.
 
@@ -37,7 +37,7 @@ Database migrations are stored in `supabase/migrations/`. Apply every pending mi
 ## Deploy to Vercel
 
 1. Import `https://github.com/the-mrovi/Ideon` in Vercel. Vercel will detect Next.js automatically.
-2. Add `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `IDEON_STUDY_PHASE` under Project Settings → Environment Variables.
+2. Add `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `IDEON_STUDY_PHASE`, and either `SUPABASE_SECRET_KEY` (preferred) or the legacy `SUPABASE_SERVICE_ROLE_KEY` under Project Settings → Environment Variables.
 3. Keep `NEXT_PUBLIC_IDEON_DEBUG_INSPECTOR=false` for production.
 4. Deploy. No custom build command, output directory, or root-directory override is required.
 

@@ -1,4 +1,5 @@
 import "server-only";
+import { buildSupabaseHeaders } from "./supabaseHeaders.ts";
 
 export class SupabaseConfigurationError extends Error {
   constructor() { super("Supabase server environment is not configured."); this.name = "SupabaseConfigurationError"; }
@@ -7,7 +8,7 @@ export class SupabaseConfigurationError extends Error {
 function environment() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !publishableKey || !serviceRoleKey) throw new SupabaseConfigurationError();
   return { url, publishableKey, serviceRoleKey };
 }
@@ -26,8 +27,7 @@ export async function supabaseRequest<T>(path: string, options: RequestOptions =
   const response = await fetch(`${env.url}${path}`, {
     method: options.method ?? "GET",
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${options.accessToken ?? key}`,
+      ...buildSupabaseHeaders(key, options.accessToken),
       "Content-Type": "application/json",
       ...(options.prefer ? { Prefer: options.prefer } : {}),
     },
