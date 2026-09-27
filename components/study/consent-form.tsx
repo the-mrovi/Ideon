@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowRight, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { writeClientSession } from "@/src/study/client-session";
+import { clearClientSession, writeClientConsent, writeClientStudyMode } from "@/src/study/client-session";
 
 const agreements = [
   "I have read the study information.",
@@ -12,67 +12,16 @@ const agreements = [
   "I agree to participate in this study.",
 ];
 
-interface SessionResponse {
-  sessionId?: string;
-  sessionToken?: string;
-  sessionCode?: string;
-  participantCode?: string;
-  error?: string;
-}
-
-const sessionErrors: Record<string, string> = {
-  supabase_not_configured: "The research database is not configured on this server. Add the Supabase environment variables and redeploy.",
-  supabase_credentials_rejected: "The research database rejected the server credentials. Check the Supabase service-role key and redeploy.",
-  database_schema_missing: "The research database is missing the Ideon study schema. Apply the Supabase migrations and try again.",
-  database_unavailable: "The research database could not be reached. Please try again in a moment.",
-  invalid_session: "The new study session could not be verified. Please try again.",
-  invalid_request: "The study server rejected the request. Please refresh the page and try again.",
-};
-
-async function requestSession(body: Record<string, string>, signal: AbortSignal) {
-  const response = await fetch("/api/study/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-    signal,
-  });
-  const payload = await response.json().catch(() => ({})) as SessionResponse;
-  if (!response.ok) {
-    throw new Error(sessionErrors[payload.error ?? ""] ?? "The study session could not be created. Please try again.");
-  }
-  return payload;
-}
-
 export function ConsentForm() {
   const [checked, setChecked] = useState<boolean[]>([false, false, false]);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState("Starting...");
-  const [error, setError] = useState("");
   const complete = checked.every(Boolean);
 
-  const continueToStudy = async () => {
-    if (!complete || busy) return;
-    setBusy(true);
-    setProgress("Creating session...");
-    setError("");
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 20_000);
-    try {
-      const session = await requestSession({ action: "start" }, controller.signal);
-      if (!session.sessionId || !session.sessionToken || !session.sessionCode || !session.participantCode) throw new Error("The study server returned an incomplete session. Please contact the study coordinator.");
-      setProgress("Recording consent...");
-      await requestSession({ action: "consent", sessionId: session.sessionId, sessionToken: session.sessionToken }, controller.signal);
-      writeClientSession({ sessionId: session.sessionId, sessionToken: session.sessionToken, sessionCode: session.sessionCode, participantCode: session.participantCode, mode: "random" });
-      window.location.assign("/study/instructions");
-    } catch (cause) {
-      setError(cause instanceof DOMException && cause.name === "AbortError"
-        ? "The study server took too long to respond. Check the deployment configuration and try again."
-        : cause instanceof Error ? cause.message : "Unable to start the study.");
-      setBusy(false);
-    } finally {
-      window.clearTimeout(timeout);
-    }
+  const continueToStudy = () => {
+    if (!complete) return;
+    clearClientSession();
+    writeClientConsent();
+    writeClientStudyMode("random");
+    window.location.assign("/study/instructions");
   };
 
   return (
@@ -96,8 +45,8 @@ export function ConsentForm() {
         ))}
       </fieldset>
       <div className="form-actions">
-        <p className={error ? "validation-message" : undefined} role={error ? "alert" : "status"}>{error || (complete ? "You're ready to continue." : "Confirm all three statements to continue.")}</p>
-        <Button type="button" disabled={!complete || busy} onClick={continueToStudy} className="action-button">{busy ? progress : "Continue"} <ArrowRight /></Button>
+        <p role="status">{complete ? "You're ready to continue." : "Confirm all three statements to continue."}</p>
+        <Button type="button" disabled={!complete} onClick={continueToStudy} className="action-button">Continue <ArrowRight /></Button>
       </div>
     </section>
   );

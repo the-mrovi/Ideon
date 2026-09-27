@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { rpc, supabaseRequest } from "./supabase.ts";
 import type { ChatMessage, ExperimentCondition, FinalIdea, StudyMode } from "../../types/study.ts";
 import type { IdeonSessionState } from "../ai/sessionStore.ts";
@@ -26,6 +26,21 @@ interface StrategyRow {
   detected_state: UserState | null;
   state_confidence: number | null;
   decision_source: string;
+}
+
+interface ExperimentConfigRow {
+  id: string;
+  config_version: string;
+  study_phase: "development" | "pilot" | "main";
+  model_provider: string;
+  model_name: string;
+  model_version: string;
+  state_prompt_version: string;
+  explore_prompt_version: string;
+  deepen_prompt_version: string;
+  task_version: string;
+  assigned_task: string;
+  frozen_at: string | null;
 }
 
 function restoredAdaptiveSignals(rows: StrategyRow[], currentStrategy: ActiveStrategy | null) {
@@ -56,9 +71,55 @@ function sameHash(left: string, right: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export async function createStudySession(): Promise<NewStudySession> {
-  const phase = process.env.IDEON_STUDY_PHASE ?? "development";
-  return rpc<NewStudySession>("create_study_session", { p_study_phase: phase, p_manual_condition: "random" });
+export async function createStudySession(mode: StudyMode): Promise<NewStudySession> {
+  const configuredPhase = process.env.IDEON_STUDY_PHASE ?? "development";
+  if (!(["development", "pilot", "main"] as const).includes(configuredPhase as "development" | "pilot" | "main")) throw new Error("invalid_study_phase");
+  const phase = configuredPhase as "development" | "pilot" | "main";
+  const configs = await supabaseRequest<ExperimentConfigRow[]>(`/rest/v1/experiment_configs?study_phase=eq.${phase}&is_active=eq.true&select=id,config_version,study_phase,model_provider,model_name,model_version,state_prompt_version,explore_prompt_version,deepen_prompt_version,task_version,assigned_task,frozen_at&order=created_at.desc&limit=1`, { serviceRole: true });
+  const config = configs[0];
+  if (!config) throw new Error("study_not_configured");
+  if (phase === "main" && !config.frozen_at) throw new Error("main_config_not_frozen");
+
+  // Insert with the participant-selected mode immediately. This works with
+  // both the original immutable-assignment trigger and the v2 schema.
+  const participantCode = `IDN-P-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+  const participants = await supabaseRequest<Array<{ id: string }>>("/rest/v1/participants?select=id", {
+    method: "POST",
+    body: { participant_code: participantCode, study_version: config.config_version },
+    serviceRole: true,
+    prefer: "return=representation",
+  });
+  const participant = participants[0];
+  if (!participant) throw new Error("participant_creation_failed");
+
+  const sessionToken = randomBytes(32).toString("hex");
+  const sessionCode = `IDN-S-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+  const sessions = await supabaseRequest<Array<{ id: string; status: string }>>("/rest/v1/study_sessions?select=id,status", {
+    method: "POST",
+    body: {
+      session_code: sessionCode,
+      session_token_hash: tokenHash(sessionToken),
+      participant_id: participant.id,
+      experiment_config_id: config.id,
+      experiment_condition: mode,
+      experiment_config_version: config.config_version,
+      study_phase: config.study_phase,
+      model_provider: config.model_provider,
+      model_name: config.model_name,
+      model_version: config.model_version,
+      state_prompt_version: config.state_prompt_version,
+      explore_prompt_version: config.explore_prompt_version,
+      deepen_prompt_version: config.deepen_prompt_version,
+      task_version: config.task_version,
+      assigned_task: config.assigned_task,
+      original_topic: "Generative AI in University Education",
+    },
+    serviceRole: true,
+    prefer: "return=representation",
+  });
+  const session = sessions[0];
+  if (!session) throw new Error("session_creation_failed");
+  return { sessionId: session.id, sessionToken, participantCode, sessionCode, status: session.status, mode };
 }
 
 export async function requireStudySession(credentials: StudyCredentials): Promise<SessionRow> {
@@ -79,10 +140,12 @@ export async function recordConsent(credentials: StudyCredentials) {
 export async function beginStudy(credentials: StudyCredentials, mode: StudyMode) {
   const session = await requireStudySession(credentials);
   if (!session.consent_given) throw new Error("consent_required");
-  if (session.turn_count > 0 || session.started_at || session.status === "in_progress") throw new Error("mode_locked");
+  if (session.experiment_condition !== mode) throw new Error("mode_locked");
+  if (session.status === "in_progress" && session.started_at) return { mode, modeLocked: true };
+  if (session.turn_count > 0 || session.started_at) throw new Error("mode_locked");
   if (session.status !== "consented") throw new Error("session_not_ready");
   const now = new Date().toISOString();
-  await supabaseRequest(`/rest/v1/study_sessions?id=eq.${encodeURIComponent(credentials.sessionId)}`, { method: "PATCH", body: { experiment_condition: mode, status: "in_progress", started_at: now, last_activity_at: now }, serviceRole: true, prefer: "return=minimal" });
+  await supabaseRequest(`/rest/v1/study_sessions?id=eq.${encodeURIComponent(credentials.sessionId)}`, { method: "PATCH", body: { status: "in_progress", started_at: now, last_activity_at: now }, serviceRole: true, prefer: "return=minimal" });
   return { mode, modeLocked: true };
 }
 
