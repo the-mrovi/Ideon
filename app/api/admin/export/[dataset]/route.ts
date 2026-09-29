@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/src/db/auth";
 import { getExportRows, recordsCsv, type ExportDataset } from "@/src/db/admin";
 
-const allowed = new Set<ExportDataset>(["transcripts", "strategies", "ideas", "final_ideas", "questionnaire_responses", "questionnaire_answers"]);
+const allowed = new Set<ExportDataset>(["transcripts", "strategies", "annotations", "final_ideas", "post_session_responses"]);
 export async function GET(_: Request, { params }: { params: Promise<{ dataset: string }> }) {
   const { dataset } = await params;
   if (!allowed.has(dataset as ExportDataset)) return new Response("Unknown export", { status: 404 });

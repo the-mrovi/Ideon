@@ -1,4 +1,4 @@
-export type ExperimentCondition = "fixed" | "random" | "adaptive";
+export type ExperimentCondition = "fixed" | "random" | "adaptive" | "natural";
 export type StudyMode = Extract<ExperimentCondition, "random" | "adaptive">;
 export type ChatRole = "user" | "assistant";
 export type MessageStatus = "normal" | "sending" | "thinking" | "streaming" | "failed";

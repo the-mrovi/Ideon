@@ -9,14 +9,24 @@ import { ideonConfig, stateToPreferredStrategy } from "../ai/experimentConfig.ts
 export interface StudyCredentials { sessionId: string; sessionToken: string }
 export interface NewStudySession extends StudyCredentials { participantCode: string; sessionCode: string; status: string; mode?: StudyMode }
 
-interface SessionRow {
-  id: string; session_code: string; session_token_hash: string; experiment_condition: ExperimentCondition;
-  experiment_config_version: string; consent_given: boolean; status: string; turn_count: number;
-  started_at: string | null;
-  current_strategy: "explore" | "deepen" | null; current_direction: string | null;
-  selected_ideas: string[]; rejected_ideas: string[]; user_constraints: string[]; original_topic: string | null;
-  state_prompt_version: string; explore_prompt_version: string; deepen_prompt_version: string;
-  model_provider: string; model_name: string; model_version: string; assigned_task: string;
+interface CoreSessionRow {
+  id: string; participant_id: string; research_task: string; study_mode: "random" | "adaptive" | "natural" | null;
+  started_at: string | null; ended_at: string | null; duration_seconds: number | null;
+  status: "created" | "in_progress" | "completed" | "abandoned"; created_at: string; updated_at: string;
+}
+
+interface SessionAccessRow { session_id: string; session_token_hash: string; consent_given: boolean }
+
+interface SessionRuntimeRow {
+  session_id: string; session_code: string; experiment_config_version: string; study_phase: "development" | "pilot" | "main";
+  model_provider: string; model_name: string; model_version: string; state_prompt_version: string;
+  explore_prompt_version: string; deepen_prompt_version: string; task_version: string; original_topic: string | null;
+  current_direction: string | null; selected_ideas: string[]; rejected_ideas: string[]; user_constraints: string[];
+  current_strategy: "explore" | "deepen" | null; turn_count: number;
+}
+
+export interface LoadedStudySession extends CoreSessionRow, SessionRuntimeRow {
+  session_token_hash: string; consent_given: boolean; experiment_condition: ExperimentCondition; assigned_task: string;
 }
 
 interface StrategyRow {
@@ -80,90 +90,98 @@ export async function createStudySession(mode: StudyMode): Promise<NewStudySessi
   if (!config) throw new Error("study_not_configured");
   if (phase === "main" && !config.frozen_at) throw new Error("main_config_not_frozen");
 
-  // Insert with the participant-selected mode immediately. This works with
-  // both the original immutable-assignment trigger and the v2 schema.
-  const participantCode = `IDN-P-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+  const participantCode = `P${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
   const participants = await supabaseRequest<Array<{ id: string }>>("/rest/v1/participants?select=id", {
     method: "POST",
-    body: { participant_code: participantCode, study_version: config.config_version },
+    body: { participant_code: participantCode },
     serviceRole: true,
     prefer: "return=representation",
   });
   const participant = participants[0];
   if (!participant) throw new Error("participant_creation_failed");
 
-  const sessionToken = randomBytes(32).toString("hex");
-  const sessionCode = `IDN-S-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
-  const sessions = await supabaseRequest<Array<{ id: string; status: string }>>("/rest/v1/study_sessions?select=id,status", {
-    method: "POST",
-    body: {
-      session_code: sessionCode,
-      session_token_hash: tokenHash(sessionToken),
-      participant_id: participant.id,
-      experiment_config_id: config.id,
-      experiment_condition: mode,
-      experiment_config_version: config.config_version,
-      study_phase: config.study_phase,
-      model_provider: config.model_provider,
-      model_name: config.model_name,
-      model_version: config.model_version,
-      state_prompt_version: config.state_prompt_version,
-      explore_prompt_version: config.explore_prompt_version,
-      deepen_prompt_version: config.deepen_prompt_version,
-      task_version: config.task_version,
-      assigned_task: config.assigned_task,
-      original_topic: "Generative AI in University Education",
-    },
-    serviceRole: true,
-    prefer: "return=representation",
-  });
-  const session = sessions[0];
-  if (!session) throw new Error("session_creation_failed");
-  return { sessionId: session.id, sessionToken, participantCode, sessionCode, status: session.status, mode };
+  try {
+    const sessions = await supabaseRequest<Array<{ id: string; status: string }>>("/rest/v1/sessions?select=id,status", {
+      method: "POST", body: { participant_id: participant.id, research_task: config.assigned_task, study_mode: mode }, serviceRole: true, prefer: "return=representation",
+    });
+    const session = sessions[0];
+    if (!session) throw new Error("session_creation_failed");
+    const sessionToken = randomBytes(32).toString("hex");
+    const sessionCode = `IDN-S-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+    await Promise.all([
+      supabaseRequest("/rest/v1/session_access", { method: "POST", body: { session_id: session.id, session_token_hash: tokenHash(sessionToken) }, serviceRole: true, prefer: "return=minimal" }),
+      supabaseRequest("/rest/v1/session_runtime", {
+        method: "POST",
+        body: {
+          session_id: session.id, session_code: sessionCode, experiment_config_id: config.id,
+          experiment_config_version: config.config_version, study_phase: config.study_phase,
+          model_provider: config.model_provider, model_name: config.model_name, model_version: config.model_version,
+          state_prompt_version: config.state_prompt_version, explore_prompt_version: config.explore_prompt_version,
+          deepen_prompt_version: config.deepen_prompt_version, task_version: config.task_version,
+          original_topic: "Generative AI in University Education",
+        },
+        serviceRole: true,
+        prefer: "return=minimal",
+      }),
+    ]);
+    return { sessionId: session.id, sessionToken, participantCode, sessionCode, status: session.status, mode };
+  } catch (error) {
+    await supabaseRequest(`/rest/v1/participants?id=eq.${participant.id}`, { method: "DELETE", serviceRole: true, prefer: "return=minimal" }).catch(() => undefined);
+    throw error;
+  }
 }
 
-export async function requireStudySession(credentials: StudyCredentials): Promise<SessionRow> {
-  const rows = await supabaseRequest<SessionRow[]>(`/rest/v1/study_sessions?id=eq.${encodeURIComponent(credentials.sessionId)}&select=*`, { serviceRole: true });
-  const session = rows[0];
-  if (!session || !credentials.sessionToken || !sameHash(session.session_token_hash, tokenHash(credentials.sessionToken))) throw new Error("invalid_session_token");
-  return session;
+export async function requireStudySession(credentials: StudyCredentials): Promise<LoadedStudySession> {
+  const id = encodeURIComponent(credentials.sessionId);
+  const [sessions, accessRows, runtimeRows] = await Promise.all([
+    supabaseRequest<CoreSessionRow[]>(`/rest/v1/sessions?id=eq.${id}&select=*`, { serviceRole: true }),
+    supabaseRequest<SessionAccessRow[]>(`/rest/v1/session_access?session_id=eq.${id}&select=session_id,session_token_hash,consent_given`, { serviceRole: true }),
+    supabaseRequest<SessionRuntimeRow[]>(`/rest/v1/session_runtime?session_id=eq.${id}&select=*`, { serviceRole: true }),
+  ]);
+  const session = sessions[0]; const access = accessRows[0]; const runtime = runtimeRows[0];
+  if (!session || !access || !runtime || !credentials.sessionToken || !sameHash(access.session_token_hash, tokenHash(credentials.sessionToken))) throw new Error("invalid_session_token");
+  return { ...session, ...runtime, session_token_hash: access.session_token_hash, consent_given: access.consent_given, experiment_condition: (session.study_mode ?? "natural") as ExperimentCondition, assigned_task: session.research_task };
 }
 
 export async function recordConsent(credentials: StudyCredentials) {
-  await requireStudySession(credentials);
+  const session = await requireStudySession(credentials);
   const now = new Date().toISOString();
-  await supabaseRequest(`/rest/v1/study_sessions?id=eq.${encodeURIComponent(credentials.sessionId)}`, {
-    method: "PATCH", body: { consent_given: true, read_study_information: true, understands_recording: true, agrees_to_participate: true, consent_version: "ideon-consent-v1", consent_timestamp: now, status: "consented", last_activity_at: now }, serviceRole: true,
-  });
+  await Promise.all([
+    supabaseRequest(`/rest/v1/session_access?session_id=eq.${encodeURIComponent(session.id)}`, { method: "PATCH", body: { consent_given: true, read_study_information: true, understands_recording: true, agrees_to_participate: true, consent_version: "ideon-consent-v1", consent_timestamp: now }, serviceRole: true, prefer: "return=minimal" }),
+    supabaseRequest(`/rest/v1/session_runtime?session_id=eq.${encodeURIComponent(session.id)}`, { method: "PATCH", body: { last_activity_at: now }, serviceRole: true, prefer: "return=minimal" }),
+  ]);
 }
 
 export async function beginStudy(credentials: StudyCredentials, mode: StudyMode) {
   const session = await requireStudySession(credentials);
   if (!session.consent_given) throw new Error("consent_required");
-  if (session.experiment_condition !== mode) throw new Error("mode_locked");
+  if (session.study_mode !== mode) throw new Error("mode_locked");
   if (session.status === "in_progress" && session.started_at) return { mode, modeLocked: true };
   if (session.turn_count > 0 || session.started_at) throw new Error("mode_locked");
-  if (session.status !== "consented") throw new Error("session_not_ready");
+  if (session.status !== "created") throw new Error("session_not_ready");
   const now = new Date().toISOString();
-  await supabaseRequest(`/rest/v1/study_sessions?id=eq.${encodeURIComponent(credentials.sessionId)}`, { method: "PATCH", body: { status: "in_progress", started_at: now, last_activity_at: now }, serviceRole: true, prefer: "return=minimal" });
+  await Promise.all([
+    supabaseRequest(`/rest/v1/sessions?id=eq.${encodeURIComponent(session.id)}`, { method: "PATCH", body: { status: "in_progress", started_at: now }, serviceRole: true, prefer: "return=minimal" }),
+    supabaseRequest(`/rest/v1/session_runtime?session_id=eq.${encodeURIComponent(session.id)}`, { method: "PATCH", body: { last_activity_at: now }, serviceRole: true, prefer: "return=minimal" }),
+  ]);
   return { mode, modeLocked: true };
 }
 
 export async function loadStudy(credentials: StudyCredentials) {
   const session = await requireStudySession(credentials);
-  const messages = await supabaseRequest<Array<{ id: string; role: "user" | "assistant"; content: string; created_at: string; message_status: string }>>(`/rest/v1/messages?session_id=eq.${session.id}&message_status=eq.completed&select=id,role,content,created_at,message_status&order=created_at.asc`, { serviceRole: true });
+  const messages = await supabaseRequest<Array<{ id: string; sender: "user" | "ai"; message_text: string; created_at: string }>>(`/rest/v1/messages?session_id=eq.${session.id}&select=id,sender,message_text,created_at&order=turn_number.asc,created_at.asc`, { serviceRole: true });
   return {
-    session: { id: session.id, code: session.session_code, condition: session.experiment_condition, status: session.status, assignedTask: session.assigned_task, turnCount: session.turn_count, modeLocked: Boolean(session.started_at || session.turn_count > 0 || session.status === "in_progress") },
-    messages: messages.map((m): ChatMessage => ({ id: m.id, role: m.role, content: m.content, createdAt: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })),
+    session: { id: session.id, code: session.session_code, condition: session.study_mode, status: session.status, assignedTask: session.research_task, turnCount: session.turn_count, modeLocked: Boolean(session.started_at || session.turn_count > 0 || session.status === "in_progress") },
+    messages: messages.map((message): ChatMessage => ({ id: message.id, role: message.sender === "ai" ? "assistant" : "user", content: message.message_text, createdAt: new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })),
   };
 }
 
 export async function loadTurnContext(credentials: StudyCredentials) {
   const session = await requireStudySession(credentials);
-  if (!session.consent_given || !["consented", "in_progress"].includes(session.status)) throw new Error("session_not_active");
+  if (!session.consent_given || session.status !== "in_progress") throw new Error("session_not_active");
   const [messages, strategyRows] = await Promise.all([
-    supabaseRequest<Array<{ id: string; role: "user" | "assistant"; content: string; created_at: string }>>(`/rest/v1/messages?session_id=eq.${session.id}&message_status=eq.completed&select=id,role,content,created_at&order=created_at.asc&limit=24`, { serviceRole: true }),
-    supabaseRequest<StrategyRow[]>(`/rest/v1/strategy_events?session_id=eq.${session.id}&select=turn_number,selected_strategy,strategy_changed,detected_state,state_confidence,decision_source&order=turn_number.desc&limit=12`, { serviceRole: true }),
+    supabaseRequest<Array<{ id: string; sender: "user" | "ai"; message_text: string; created_at: string }>>(`/rest/v1/messages?session_id=eq.${session.id}&select=id,sender,message_text,created_at&order=turn_number.asc,created_at.asc&limit=24`, { serviceRole: true }),
+    supabaseRequest<StrategyRow[]>(`/rest/v1/automatic_behavior_predictions?session_id=eq.${session.id}&select=turn_number,selected_strategy,strategy_changed,detected_state,state_confidence,decision_source&order=turn_number.desc&limit=12`, { serviceRole: true }),
   ]);
   const restored = restoredAdaptiveSignals(strategyRows, session.current_strategy);
   const state: IdeonSessionState = {
@@ -173,7 +191,7 @@ export async function loadTurnContext(credentials: StudyCredentials) {
     turnNumber: session.turn_count,
     ...restored,
   };
-  return { session, state, recentMessages: messages.map((m): ChatMessage => ({ id: m.id, role: m.role, content: m.content, createdAt: m.created_at })) };
+  return { session, state, recentMessages: messages.map((message): ChatMessage => ({ id: message.id, role: message.sender === "ai" ? "assistant" : "user", content: message.message_text, createdAt: message.created_at })) };
 }
 
 export async function saveFinalIdea(credentials: StudyCredentials, idea: FinalIdea, submit: boolean) {
@@ -183,9 +201,11 @@ export async function saveFinalIdea(credentials: StudyCredentials, idea: FinalId
 
 export async function loadFinalIdea(credentials: StudyCredentials): Promise<FinalIdea | null> {
   const session = await requireStudySession(credentials);
-  const rows = await supabaseRequest<Array<{ research_topic: string; research_problem: string; research_question: string; short_explanation: string }>>(`/rest/v1/final_ideas?session_id=eq.${session.id}&select=research_topic,research_problem,research_question,short_explanation`, { serviceRole: true });
+  const drafts = await supabaseRequest<Array<{ research_topic: string; research_problem: string; research_question: string; short_explanation: string }>>(`/rest/v1/final_idea_drafts?session_id=eq.${session.id}&select=research_topic,research_problem,research_question,short_explanation`, { serviceRole: true });
+  if (drafts[0]) return { topic: drafts[0].research_topic, problem: drafts[0].research_problem, question: drafts[0].research_question, explanation: drafts[0].short_explanation };
+  const rows = await supabaseRequest<Array<{ research_topic: string | null; research_problem: string | null; research_question: string | null }>>(`/rest/v1/final_ideas?session_id=eq.${session.id}&select=research_topic,research_problem,research_question`, { serviceRole: true });
   const idea = rows[0];
-  return idea ? { topic: idea.research_topic, problem: idea.research_problem, question: idea.research_question, explanation: idea.short_explanation } : null;
+  return idea ? { topic: idea.research_topic ?? "", problem: idea.research_problem ?? "", question: idea.research_question ?? "", explanation: "" } : null;
 }
 
 export async function submitQuestionnaire(credentials: StudyCredentials, answers: Array<{ questionKey: string; construct: string; numericValue?: number; textValue?: string }>) {
